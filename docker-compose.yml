@@ -1,0 +1,25 @@
+services:
+  vessel-map:
+    build: .
+    image: vessel-map
+    ports:
+      - "8501:8501"
+    environment:
+      - CSV_PATH=/app/data/ship_to_daftvalues.csv
+      - CONTOURS_PATH=/app/data/contours.json
+    restart: unless-stopped
+
+  # One-off job: docker compose run --rm preprocess
+  preprocess:
+    build: .
+    image: vessel-map
+    profiles: ["tools"]
+    command: python preprocess_bathy.py
+    volumes:
+      - ./data:/app/data
+    environment:
+      - BATHY_PATH=/app/data/bathymetry.csv
+      - CONTOURS_PATH=/app/data/contours.json
+      - BATHY_SEP=,          # change to a tab if your file is tab-separated
+      - CELL_DEG=0.005
+      - CONTOUR_STEP=5

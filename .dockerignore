@@ -1,0 +1,2 @@
+# Keep the 1.9 GB raw file out of the image; only contours.json goes in
+data/bathymetry.csv
