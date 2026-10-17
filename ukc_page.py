@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from common import (box_feature, cat_color, cat_name, contour_layer, load_grid, map_limits,
-                    png_data_url, render_map, require_ships)
+                    png_data_url, render_map, require_ships, to_web_mercator)
 from ukc import CATEGORIES, CAT_RGB, barrass_squat, box_around, classify, ukc_percent
 
 MAX_IMAGE_CELLS = 1_500_000   # UKC overlay is thinned above this
@@ -108,7 +108,7 @@ if grid is not None:
             valid = cat >= 0
             rgba[valid, :3] = CAT_RGB[cat[valid]]
             rgba[valid, 3] = 255
-            payload["image"] = {"url": png_data_url(np.flipud(rgba)),  # image row 0 = north
+            payload["image"] = {"url": png_data_url(to_web_mercator(np.flipud(rgba), win["s"], win["n"])),  # image row 0 = north
                                 "coords": [[win["w"], win["n"]], [win["e"], win["n"]],
                                            [win["e"], win["s"]], [win["w"], win["s"]]]}
             payload["stride"] = win["stride"]

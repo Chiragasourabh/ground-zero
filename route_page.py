@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from common import (box_feature, contour_layer, load_grid, map_limits, png_data_url,
-                    render_map, require_ships)
+                    render_map, require_ships, to_web_mercator)
 from routing import AREAS, BANDS, M_PER_NM, plan_route
 from ukc import barrass_squat, hex_to_rgb
 
@@ -183,7 +183,7 @@ if show_areas and "classes" in r:
     for k, a in enumerate(AREAS, start=1):
         rgba[cls == k] = (*hex_to_rgb(a["color"]), 255)
     wn = r["win"]
-    payload["image"] = {"url": png_data_url(np.flipud(rgba)),
+    payload["image"] = {"url": png_data_url(to_web_mercator(np.flipud(rgba), wn["s"], wn["n"])),
                         "bounds": [[wn["s"], wn["w"]], [wn["n"], wn["e"]]]}
 
 if "error" not in r:

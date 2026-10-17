@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import streamlit as st
 import streamlit.components.v1 as components
 from PIL import Image
@@ -110,3 +111,14 @@ def render_map(template_name, payload, height=900):
     template = (HERE / template_name).read_text()
     html = template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/"))
     components.html(html, height=height)
+
+def to_web_mercator(rgba, south, north):
+    """Leaflet stretches image overlays evenly in Web Mercator, but the grid rows are even in
+    latitude. Resample the rows (image row 0 = north) so the overlay lines up with the map."""
+    ny = rgba.shape[0]
+    merc = lambda lat: np.log(np.tan(np.pi / 4 + np.radians(lat) / 2))
+    y_top, y_bottom = merc(north), merc(south)
+    y = y_top + (np.arange(ny) + 0.5) * (y_bottom - y_top) / ny        # centre of each output row
+    lat = np.degrees(2 * np.arctan(np.exp(y)) - np.pi / 2)
+    src = np.floor((north - lat) / (north - south) * ny).astype(int).clip(0, ny - 1)
+    return rgba[src]
