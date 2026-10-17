@@ -1,2 +1,4 @@
 data/bathymetry.csv
 data/bathy_grid.*
+__pycache__/
+MNT_FACADE_ATLANTIQUE_HOMONIM_NM/

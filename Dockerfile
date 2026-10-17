@@ -6,6 +6,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY *.py *.html ./
+COPY port_view/ ./port_view/
+COPY assets/ ./assets/
 COPY data/ ./data/
 
 EXPOSE 8501

@@ -41,6 +41,44 @@
   .leaflet-tooltip b, .leaflet-popup-content b { font-weight:600; }
   .tag { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
   .tag i { width:11px; height:11px; border-radius:2px; display:inline-block; }
+
+  #game { top:12px; right:56px; width:300px; padding:10px 14px 12px; font-size:13px; line-height:1.4;
+          max-height:calc(100% - 330px); overflow-y:auto; }
+  #game h3 { margin:0 0 4px; font-size:15px; font-weight:600; }
+  #game p { margin:4px 0; color:#3C566B; }
+  #game button { font:inherit; font-size:13px; padding:4px 10px; border:1px solid var(--rule); border-radius:4px;
+                 background:#fff; color:var(--ink); cursor:pointer; }
+  #game button.primary { background:var(--ink); border-color:var(--ink); color:#fff; }
+  #game button:disabled { opacity:.45; cursor:default; }
+  #game .btns { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  #game .eta { display:grid; grid-template-columns:auto 1fr; gap:1px 10px; margin:8px 0 4px; font-variant-numeric:tabular-nums; }
+  #game .eta b { font-weight:600; }
+  #game .eta span { color:#5B7385; }
+  #game .leg { border-left:5px solid var(--c); background:#fff; border-radius:0 4px 4px 0; padding:4px 8px; margin:5px 0;
+               font-variant-numeric:tabular-nums; }
+  #game .leg input { width:58px; font:inherit; padding:1px 4px; }
+  #game .bad { color:#C62828; font-weight:600; }
+  #game .verdict { font-size:17px; font-weight:600; margin:2px 0 4px; }
+  #game .cats { display:flex; gap:3px; margin:4px 0; }
+  #game .cats i { flex:1; height:6px; border-radius:2px; }
+  .wp { width:18px; height:18px; border-radius:50%; background:#fff; color:var(--ink); border:2px solid var(--ink);
+        font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; box-sizing:border-box; cursor:grab; }
+  .aground { background:#6A1B9A; color:#fff; font-weight:600; font-size:12px; padding:2px 8px; border-radius:4px;
+             white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.4); }
+
+  /* Voyage: the ship on the map, its readout and keel view (same look as Port view) */
+  #game .hud { font-size:13px; color:#3C566B; font-variant-numeric:tabular-nums; }
+  #game .hud b { font-size:20px; font-weight:600; color:var(--ink); }
+  #game .pill { display:inline-block; padding:0 8px; border-radius:999px; font-weight:600; }
+  #game kbd { background:#fff; border:1px solid var(--rule); border-radius:3px; padding:0 4px; font:inherit; font-size:11.5px; }
+  #game .keys { font-size:12px; }
+  #keel { width:100%; height:110px; display:block; background:#0B121A; border-radius:4px; margin-top:6px; }
+  .ship { overflow:visible; display:block; }
+  .ship path { stroke:#0D2B45; stroke-width:2; stroke-linejoin:round; }
+  #banner { position:absolute; left:50%; top:40%; transform:translate(-50%,-50%); z-index:1100; pointer-events:none;
+            background:#78001A; color:#fff; padding:14px 22px; border-radius:10px; font-size:22px; font-weight:700;
+            text-align:center; box-shadow:0 6px 30px rgba(0,0,0,.5); }
+  #banner small { display:block; font-size:13px; font-weight:400; opacity:.85; }
 </style>
 </head>
 <body>
@@ -48,6 +86,8 @@
 <div id="readout" class="panel"></div>
 <div id="legend" class="panel"></div>
 <div id="coords" class="panel">Move over the map</div>
+<div id="game" class="panel" hidden></div>
+<div id="banner" hidden>AGROUND<small></small></div>
 <script>
 const D = __DATA__;
 
@@ -56,6 +96,10 @@ const tag = (color, name) => `<span class="tag"><i style="background:${color}"><
 const ll = (lon, lat) => L.latLng(lat, lon);
 const bbox = b => L.latLngBounds(ll(b[0][0], b[0][1]), ll(b[1][0], b[1][1]));
 const bandOf = c => D.bands.findIndex(b => c >= b.min);
+const hm = hours => {
+  const m = Math.round(hours * 60);
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+};
 
 // ---------- Readout ----------
 (function () {
@@ -70,11 +114,11 @@ const bandOf = c => D.bands.findIndex(b => c >= b.min);
   }
   const b = D.bands[bandOf(R.conf)];
   el.style.setProperty("--band", b.color);
-  const h = Math.floor(R.hours), m = Math.round((R.hours % 1) * 60);
   el.innerHTML = `<div class="ship">Ship ${R.ship} to ${D.dstLabel}</div>
     <div class="big">${fmt(R.length_nm, 1)} nm</div>
     <div class="cat">${fmt(R.conf, 0)}% confidence, ${b.name.toLowerCase()}</div>
-    <div class="sub">About ${h} h ${String(m).padStart(2, "0")} min at planned speed<br>
+    <div class="sub">Plan says ${hm(R.hours)} at ${fmt(R.speed, 1)} kn<br>
+      <span id="waterEta"></span><br>
       Lowest UKC ${fmt(R.min_ukc, 0)}%, draft used ${fmt(R.teff, 2)} m
       ${(R.connectors || []).map(c => `<br><span style="color:#C62828;font-weight:600">${c.name === "start" ? "Start" : "Destination"} is outside safe water, ${fmt(c.moved_m / 1852, 2)} nm off the route</span>`).join("")}</div>`;
 })();
@@ -116,6 +160,7 @@ map.on("moveend", () => {
 const coordsEl = document.getElementById("coords");
 map.on("mousemove", e => { coordsEl.textContent = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`; });
 map.on("click", e => {
+  if (gameMode === "plot") return;  // clicks add waypoints instead, see the game below
   L.popup().setLatLng(e.latlng)
     .setContent(`<b>Lat</b> ${e.latlng.lat.toFixed(4)}<br><b>Lon</b> ${e.latlng.lng.toFixed(4)}<br>
       <span style="color:#5B7385">Type these into the destination fields to route here.</span>`)
@@ -193,7 +238,553 @@ if (D.ships) {
 // Start and destination pins
 const pin = (cls, label) => L.divIcon({ className: "", html: `<div class="pin ${cls}">${label}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
 L.marker(ll(...D.src), { icon: pin("", "A"), pane: "marks" }).bindTooltip("<b>Start</b>", { direction: "top", offset: [0, -12] }).addTo(map);
-L.marker(ll(...D.dst), { icon: pin("dst", "B"), pane: "marks" }).bindTooltip(`<b>${D.dstLabel}</b>`, { direction: "top", offset: [0, -12] }).addTo(map);
+const pinB = L.marker(ll(...D.dst), { icon: pin("dst", "B"), pane: "marks" }).bindTooltip(`<b>${D.dstLabel}</b>`, { direction: "top", offset: [0, -12] }).addTo(map);
+
+// ---------- Sail it: take the helm, watch the planned route sailed, or plot and race your own ----------
+// The plan's time assumes full speed all the way. In shallow water squat grows with speed squared and
+// eats the clearance under the keel, so a careful ship slows down. "Water says" sails the planned route,
+// slowing wherever UKC would drop below SLOW_UKC. Same maths as ukc.py: open-water Barrass squat,
+// UKC % = (h - T) / T with T = draft + squat.
+const SLOW_UKC = 50;    // %: the shallow-water effect starts below this (challenge brief)
+const STEER_KN = 5;     // slowest the water's pace goes; at or below it a stretch never counts as too fast
+const RACE_S = 25;      // racing your plotted route plays back in about this many seconds
+const SIM_S = 40;       // "Simulate the route" plays the planned route in about this many seconds
+const HELM_S = 120;     // at the helm, the planned route at planned speed takes about this long to sail
+const MAX_AHEAD_KN = 20, MAX_ASTERN_KN = -4, ACCEL_KN_S = 1.5, TURN_DEG_S = 22;  // helm feel, as in Port view
+const KN_MS = 0.5144, M_PER_DEG = 111320;
+let gameMode = "idle";  // idle | plot | voyage | done
+
+(function () {
+  if (!D.game || !D.route) return;
+  const G = D.game, R = D.route;
+  const depth = new Int16Array(Uint8Array.from(atob(G.depth_dm), c => c.charCodeAt(0)).buffer);
+
+  function depthAt(lon, lat) {  // water depth (m) at the nearest cell; NaN outside the corridor or without data
+    const ix = Math.floor((lon - G.w) / G.cell), iy = Math.floor((lat - G.s) / G.cell);
+    if (ix < 0 || iy < 0 || ix >= G.nx || iy >= G.ny) return NaN;
+    const v = depth[iy * G.nx + ix];
+    return v === -32768 ? NaN : v / 10;
+  }
+  const squat = v => G.squat ? G.cb * v * v / 100 : 0;
+  const ukc = (h, v) => (h - G.draft - squat(v)) / (G.draft + squat(v)) * 100;
+  function safeSpeed(h) {  // fastest speed that keeps UKC at SLOW_UKC; 0 when even stopped is not enough
+    if (!G.squat) return Infinity;
+    const s = h / (1 + SLOW_UKC / 100) - G.draft;
+    return s > 0 ? Math.sqrt(100 * s / G.cb) : 0;
+  }
+  const catOf = u => isNaN(u) ? -1 : D.categories.findIndex(c => u < c.hi);
+  const catColor = i => i >= 0 ? D.categories[i].color : "#9E9E9E";
+  function nm(a, b) {
+    const r = Math.PI / 180, p1 = a[1] * r, p2 = b[1] * r;
+    const x = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin((b[0] - a[0]) * r / 2) ** 2;
+    return 2 * 6371000 * Math.asin(Math.sqrt(x)) / 1852;
+  }
+  function bearing(a, b) {  // degrees from north, a to b
+    const r = Math.PI / 180, dl = (b[0] - a[0]) * r;
+    const y = Math.sin(dl) * Math.cos(b[1] * r);
+    const x = Math.cos(a[1] * r) * Math.sin(b[1] * r) - Math.sin(a[1] * r) * Math.cos(b[1] * r) * Math.cos(dl);
+    return (Math.atan2(y, x) / r + 360) % 360;
+  }
+  function offset(p, heading, metres) {  // the point `metres` from p along heading
+    const r = heading * Math.PI / 180;
+    return [p[0] + metres * Math.sin(r) / (M_PER_DEG * Math.cos(p[1] * Math.PI / 180)),
+            p[1] + metres * Math.cos(r) / M_PER_DEG];
+  }
+  function at(track, t) {  // position at time t (hours) on a timed track, and the track point sailed towards
+    let lo = 0, hi = track.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (track[mid].t <= t) lo = mid; else hi = mid; }
+    const a = track[lo], b = track[hi], f = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 1;
+    return { p: [a.p[0] + (b.p[0] - a.p[0]) * f, a.p[1] + (b.p[1] - a.p[1]) * f], s: b };
+  }
+  const dist = m => m < 1852 ? `${Math.round(m)} m` : `${fmt(m / 1852, 1)} nm`;
+
+  // "Water says": the planned route at planned speed, except where that leaves less than SLOW_UKC
+  const water = (function () {
+    const pts = R.segments.flatMap(s => s.coords), track = [{ t: 0, p: pts[0], v: G.speed }];
+    let t = 0, slowNm = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const d = nm(pts[i - 1], pts[i]);
+      if (!d) continue;
+      const h = Math.min(depthAt(...pts[i - 1]), depthAt(...pts[i]));
+      const v = Math.min(G.speed, Math.max(safeSpeed(h), STEER_KN));
+      if (v < G.speed) slowNm += d;
+      t += d / v;
+      track.push({ t, p: pts[i], v });
+    }
+    return { track, hours: t, slowNm };
+  })();
+  document.getElementById("waterEta").innerHTML = !G.squat
+    ? `Water says ${hm(water.hours)}: squat is off, so no slowing`
+    : water.slowNm > 0.05
+      ? `Water says <b>${hm(water.hours)}</b>: slows for ${fmt(water.slowNm, 1)} nm to keep UKC above ${SLOW_UKC}%`
+      : `Water says ${hm(water.hours)}: deep enough for full speed`;
+
+  // ----- Player route, kept across reruns of the page -----
+  const A = R.waypoints[0], B = R.waypoints[R.waypoints.length - 1];
+  const start = [A.lon, A.lat], end = [B.lon, B.lat], corridor = bbox(D.fitBounds);
+  const P = { pts: [start], speeds: [], finished: false };
+  const SAVE = `race|${D.src}|${D.dst}`;
+  const save = () => { try { sessionStorage.setItem(SAVE, JSON.stringify(P)); } catch (e) {} };
+  try {
+    const s = JSON.parse(sessionStorage.getItem(SAVE) || "null");
+    if (s && s.pts.length > 1) {
+      Object.assign(P, s);
+      P.pts[0] = start;  // new settings can move where the planned route starts and ends
+      if (P.finished) P.pts[P.pts.length - 1] = end;
+      gameMode = "plot";
+    }
+  } catch (e) {}
+
+  // Sail the player's legs: a sample every half cell, each stretch judged on its shallower end
+  function evaluate() {
+    const legs = [], runs = [], track = [{ t: 0, p: P.pts[0], u: NaN, v: P.speeds[0] }];
+    let t = 0, dist = 0, minU = Infinity, fastNm = 0, aground = null;
+    P.pts.slice(1).forEach((b, k) => {
+      const a = P.pts[k], v = P.speeds[k], legNm = nm(a, b);
+      const n = Math.max(1, Math.ceil(2 * Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) / G.cell));
+      const leg = { nm: legNm, v, minU: Infinity, minH: Infinity, fastNm: 0, cleanKn: Infinity, aground: false };
+      let prev = a, hPrev = depthAt(...a);
+      for (let i = 1; i <= n; i++) {
+        const p = [a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n];
+        const hp = depthAt(...p), h = Math.min(hPrev, hp), u = ukc(h, v), d = legNm / n;
+        leg.minH = Math.min(leg.minH, h);
+        leg.cleanKn = Math.min(leg.cleanKn, safeSpeed(h));
+        if (!(u >= 0)) {  // negative, or NaN for land / no data: the keel is on the seabed
+          leg.aground = true;
+          if (!aground) aground = { p, t: t + d / v, nm: dist + d };
+        } else {
+          leg.minU = Math.min(leg.minU, u);
+          if (v > STEER_KN && u < SLOW_UKC) leg.fastNm += d;
+        }
+        const c = catOf(u), last = runs[runs.length - 1];
+        if (last && last.c === c) last.coords.push(p); else runs.push({ c, coords: [prev, p] });
+        t += d / v; dist += d;
+        track.push({ t, p, u, v });
+        prev = p; hPrev = hp;
+      }
+      leg.cleanKn = Math.max(leg.cleanKn, STEER_KN);
+      minU = Math.min(minU, leg.minU); fastNm += leg.fastNm;
+      legs.push(leg);
+    });
+    return { legs, runs, track, hours: t, nm: dist, minU, fastNm, aground };
+  }
+
+  // ----- Drawing -----
+  map.createPane("player").style.zIndex = 450;
+  const playerRenderer = L.canvas({ pane: "player" });
+  const lines = L.layerGroup().addTo(map), marks = L.layerGroup().addTo(map);
+  const rubber = L.polyline([], { pane: "player", renderer: playerRenderer, color: "#0D2B45", weight: 2,
+                                  dashArray: "4 6", interactive: false }).addTo(map);
+  const ghost = L.circleMarker([0, 0], { pane: "marks", radius: 8, color: "#0D2B45", weight: 2, dashArray: "3 3",
+                                         fillColor: "#FFFFFF", fillOpacity: 0.6, interactive: false });
+
+  function drawLines(run) {
+    lines.clearLayers();
+    const opt = { pane: "player", renderer: playerRenderer, interactive: false, lineCap: "round", lineJoin: "round" };
+    L.polyline(P.pts.map(p => ll(...p)), { ...opt, color: "#0D2B45", weight: 8, opacity: 0.85 }).addTo(lines);
+    run.runs.forEach(r => L.polyline(r.coords.map(p => ll(...p)), { ...opt, color: catColor(r.c), weight: 4 }).addTo(lines));
+    if (run.aground) {
+      L.marker(ll(...run.aground.p), { pane: "marks", interactive: false,
+        icon: L.divIcon({ className: "", html: '<div class="aground">Aground</div>', iconSize: null, iconAnchor: [30, 28] }) })
+        .addTo(lines);
+    }
+  }
+
+  function drawMarks() {
+    marks.clearLayers();
+    P.pts.forEach((p, k) => {
+      if (k === 0 || (P.finished && k === P.pts.length - 1)) return;  // A and B have their own pins
+      L.marker(ll(...p), { pane: "marks", draggable: gameMode === "plot",
+        icon: L.divIcon({ className: "", html: `<div class="wp">${k}</div>`, iconSize: [18, 18], iconAnchor: [9, 9] }) })
+        .on("drag", e => { P.pts[k] = [e.latlng.lng, e.latlng.lat]; drawLines(evaluate()); })
+        .on("dragend", () => render())
+        .addTo(marks);
+    });
+  }
+
+  // ----- Panel -----
+  const panel = document.getElementById("game");
+  let tip = "";
+
+  const eta = (run, you) => `<div class="eta">
+      <span>Plan says</span><b>${hm(R.hours)}</b>
+      <span>Water says</span><b>${hm(water.hours)}</b>
+      ${you === undefined ? "" : `<span>You</span><b>${you}</b>`}</div>`;
+  const cats = `<div class="cats">${D.categories.map(c => `<i style="background:${c.color}" title="${c.name}"></i>`).join("")}</div>`;
+
+  function legHtml(g, k) {
+    let note;
+    if (g.aground) {
+      note = `<span class="bad">${g.minH > G.draft
+        ? `Aground at this speed, keep under ${fmt(Math.sqrt(100 * (g.minH - G.draft) / G.cb), 1)} kn`
+        : "Crosses land or water shallower than the draft"}</span>`;
+    } else if (g.fastNm > 0) {
+      note = `Lowest UKC ${fmt(g.minU, 0)}%. <span class="bad">Too fast for ${fmt(g.fastNm, 1)} nm</span>:
+        slow to ${fmt(g.cleanKn, 1)} kn, or add a waypoint to slow down only there`;
+    } else {
+      note = `Lowest UKC ${fmt(g.minU, 0)}%${G.squat ? `, fine up to ${g.cleanKn >= 30 ? "any speed" : fmt(g.cleanKn, 1) + " kn"}` : ""}`;
+    }
+    return `<div class="leg" style="--c:${catColor(g.aground ? 0 : catOf(g.minU))}"><b>Leg ${k + 1}</b> · ${fmt(g.nm, 2)} nm at
+      <input type="number" min="1" max="30" step="0.5" value="${g.v}" data-leg="${k}"> kn<br>${note}</div>`;
+  }
+
+  function planHtml(run) {
+    const you = P.finished ? hm(run.hours) : run.nm ? `${hm(run.hours)} so far` : "plot a route";
+    return `<h3>Plot your route</h3>
+      <p>${P.finished ? "Set a speed for each leg, then simulate it against the water. Drag waypoints to adjust."
+                      : "Click the map to add waypoints. Click B to finish."}</p>
+      ${tip ? `<p class="bad">${tip}</p>` : ""}
+      ${eta(run, you)}
+      ${run.legs.map(legHtml).join("")}
+      <p>Run aground and you lose. Above ${STEER_KN} kn, a stretch with UKC under ${SLOW_UKC}% counts as too fast.
+        Your line is coloured by UKC at your speed:</p>${cats}
+      <div class="btns">
+        <button class="primary" data-act="race" ${P.finished ? "" : "disabled"}>Simulate my route</button>
+        ${P.finished ? "" : `<button data-act="finish" ${P.pts.length > 1 ? "" : "disabled"}>Finish at B</button>`}
+        <button data-act="undo" ${P.pts.length > 1 ? "" : "disabled"}>Undo</button>
+        <button data-act="clear">Clear</button>
+        <button data-act="back">Back</button>
+      </div>`;
+  }
+
+  // Result of your run, plotted ("race") or steered ("helm")
+  function resultHtml(run, kind) {
+    const diff = Math.round((run.hours - water.hours) * 60);
+    let verdict, detail;
+    if (run.aground) {
+      verdict = "Aground";
+      detail = `The keel touched the seabed after ${fmt(run.aground.nm, 1)} nm. Slow down there, or find deeper water.`;
+    } else if (run.fastNm > 0) {
+      verdict = "Arrived, but too fast";
+      detail = `${fmt(run.fastNm, 1)} nm above ${STEER_KN} kn with UKC under ${SLOW_UKC}%. That time isn't one the water allows.`;
+    } else if (diff < 0) {
+      verdict = `You beat the water by ${hm(-diff / 60)}`;
+      detail = "A clean run: deep enough everywhere for the speeds you chose.";
+    } else {
+      verdict = diff ? `${hm(diff / 60)} behind the water` : "Dead heat with the water";
+      detail = "A clean run. Look for deeper water where you can keep your speed up.";
+    }
+    return `<h3>Result</h3><div class="verdict">${verdict}</div><p>${detail}</p>
+      ${eta(run, run.aground ? "aground" : hm(run.hours))}
+      <div class="eta"><span>Your distance</span><b>${fmt(run.nm, 1)} nm (plan ${fmt(R.length_nm, 1)} nm)</b>
+        <span>Lowest UKC</span><b>${isFinite(run.minU) ? fmt(run.minU, 0) + "%" : "n/a"}</b></div>
+      <div class="btns">
+        <button class="primary" data-act="${kind}">${kind === "helm" ? "Sail again" : "Simulate again"}</button>
+        ${kind === "race" ? `<button data-act="plot">Edit route</button><button data-act="clear">Clear</button>` : ""}
+        <button data-act="back">Back</button></div>`;
+  }
+
+  const routeDoneHtml = () => `<h3>Arrived</h3><div class="verdict">${hm(water.hours)} at the water's pace</div>
+    <p>${water.slowNm > 0.05
+      ? `Slowed for ${fmt(water.slowNm, 1)} nm to keep UKC above ${SLOW_UKC}%, so it arrives ${hm(water.hours - R.hours)} later than the plan says.`
+      : "Deep enough all the way to keep full speed."}</p>
+    ${eta()}
+    <div class="btns"><button class="primary" data-act="route">Simulate again</button>
+      <button data-act="helm">Sail it yourself</button><button data-act="back">Back</button></div>`;
+
+  const doneHtml = () => V.kind === "route" ? routeDoneHtml()
+    : V.kind === "race" ? resultHtml(V.run, "race")
+    : resultHtml({ hours: V.t, nm: V.nm, minU: V.minU, fastNm: V.fastNm, aground: null }, "helm");
+
+  const idleHtml = () => `<h3>Sail it</h3>
+    <p>The plan assumes full speed all the way. In shallow water squat eats the clearance under the keel,
+      so a careful ship slows down and arrives later.</p>
+    ${eta()}
+    <div class="btns"><button class="primary" data-act="helm">Sail</button>
+      <button data-act="route">Simulate the route</button><button data-act="plot">Plot my route</button></div>
+    <p><b>Sail</b>: take the helm with WASD or the arrow keys and bring her to B.<br>
+      <b>Simulate the route</b>: the ship sails the planned route by itself, slowing in shallow water.<br>
+      <b>Plot my route</b>: draw your own and race it against the water.</p>`;
+
+  const voyageHtml = () => `<h3>${{ helm: "You have the helm", route: "Sailing the planned route",
+                                    race: "Your route against the water" }[V.kind]}</h3>
+    <div class="hud"><b id="vSpeed"></b> kn &nbsp; hdg <b id="vHdg"></b>° &nbsp; <span id="vWarp"></span></div>
+    <p id="vHint"></p>
+    <div class="eta">
+      <span>Under keel</span><b id="vUkc"></b>
+      <span>Depth · squat</span><b id="vDepth"></b>
+      <span>Worst ahead</span><b id="vWorst"></b>
+      <span>Speed limit ahead</span><b id="vLimit"></b>
+      <span>Elapsed</span><b id="vTime"></b>
+      <span>Sailed</span><b id="vNm"></b>
+      ${V.kind === "race" ? `<span>Water (hollow dot)</span><b id="vGhost"></b>` : ""}
+    </div>
+    <canvas id="keel"></canvas>
+    <p class="keys">${V.kind === "helm" ? `<kbd>W</kbd>/<kbd>↑</kbd> ahead · <kbd>S</kbd>/<kbd>↓</kbd> astern ·
+      <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> helm · <kbd>Space</kbd> stop · <kbd>R</kbd> reset`
+      : `<kbd>R</kbd> restart`} · <kbd>V</kbd> follow ship</p>
+    <div class="btns"><button data-act="stop">Stop</button></div>`;
+
+  function render(run = evaluate()) {
+    save();
+    drawLines(run);
+    drawMarks();
+    rubber.setLatLngs([]);
+    map.getContainer().style.cursor = gameMode === "plot" && !P.finished ? "crosshair" : "";
+    panel.innerHTML = { idle: idleHtml, plot: planHtml, voyage: voyageHtml, done: doneHtml }[gameMode](run);
+    panel.hidden = false;
+    tip = "";
+  }
+
+  // ----- Voyage: one ship on the map, steered by you or following a timed track -----
+  // "helm": WASD / arrow keys, like Port view. "route": the planned route at the water's pace.
+  // "race": your plotted route, with the water's pace as a hollow ghost dot.
+  const cellM = G.cell * M_PER_DEG, arriveM = Math.max(500, 2 * cellM);
+  const shipMarker = L.marker([0, 0], { pane: "marks", interactive: false, keyboard: false,
+    icon: L.divIcon({ className: "", iconSize: [28, 28], iconAnchor: [14, 14],
+      html: '<svg class="ship" width="28" height="28" viewBox="-14 -14 28 28"><path d="M0,-13 L6,-4 L6,11 L-6,11 L-6,-4 Z"/></svg>' }) });
+  const trail = L.layerGroup().addTo(map);
+  const banner = document.getElementById("banner"), keys = new Set();
+  let V = null;
+
+  function startVoyage(kind) {
+    stopVoyage();
+    const run = kind === "race" ? evaluate() : null;
+    const track = run ? run.track : kind === "route" ? water.track : null;
+    const stops = run ? (run.aground ? run.aground.t : run.hours) : water.hours;   // when this ship stops
+    const stopAt = kind === "helm" ? Infinity : run && !run.aground ? Math.max(stops, water.hours) : stops;
+    const warp = kind === "helm" ? Math.min(5000, Math.max(20, R.hours * 3600 / HELM_S))
+                                 : stopAt * 3600 / (kind === "race" ? RACE_S : SIM_S);
+    const p0 = track ? track[0].p : start;
+    const p1 = track ? track[1].p : [R.waypoints[1].lon, R.waypoints[1].lat];
+    V = { kind, run, track, stops, stopAt, warp, pos: p0, heading: bearing(p0, p1), speed: 0, t: 0, nm: 0,
+          fastNm: 0, minU: Infinity, aground: false, arrived: false, follow: kind !== "race",
+          last: performance.now(), line: null, lineC: null };
+    gameMode = "voyage";
+    render();
+    shipMarker.setLatLng(ll(...p0)).addTo(map);
+    if (kind === "race") ghost.setLatLng(ll(...water.track[0].p)).addTo(map);
+    if (V.follow) {  // zoom so a few seconds of sailing fit on screen
+      const span = 2 * Math.max(G.speed, STEER_KN) * KN_MS * warp * (kind === "helm" ? 15 : 8);
+      map.fitBounds(ll(...p0).toBounds(span), { animate: false });
+    }
+    if (kind === "helm") map.keyboard.disable();
+    document.activeElement?.blur();
+    V.raf = requestAnimationFrame(frame);
+  }
+
+  function stopVoyage() {
+    if (V) cancelAnimationFrame(V.raf);
+    V = null;
+    shipMarker.remove(); ghost.remove(); trail.clearLayers();
+    banner.hidden = true;
+    keys.clear();
+    map.keyboard.enable();
+  }
+
+  function frame(now) {
+    if (!V) return;
+    const dt = Math.min(0.05, (now - V.last) / 1000);
+    V.last = now;
+    if (!V.aground && !V.arrived) (V.kind === "helm" ? helmStep : trackStep)(dt);
+    drawVoyage();
+    if (V.arrived) { gameMode = "done"; render(); return; }
+    V.raf = requestAnimationFrame(frame);
+  }
+
+  function helmStep(dt) {  // same feel as Port view's step(), with time sped up by V.warp
+    const down = (...k) => k.some(x => keys.has(x));
+    if (down("w", "arrowup")) V.speed = Math.min(MAX_AHEAD_KN, V.speed + ACCEL_KN_S * dt);
+    if (down("s", "arrowdown")) V.speed = Math.max(MAX_ASTERN_KN, V.speed - ACCEL_KN_S * dt);
+    if (down(" ")) V.speed -= Math.sign(V.speed) * Math.min(Math.abs(V.speed), 4 * dt);
+    // The rudder needs water flowing past it: no turning on the spot
+    const turn = TURN_DEG_S * Math.min(1, Math.abs(V.speed) / 4) * Math.sign(V.speed || 1);
+    if (down("a", "arrowleft")) V.heading -= turn * dt;
+    if (down("d", "arrowright")) V.heading += turn * dt;
+    V.heading = (V.heading + 360) % 360;
+    if (V.speed || V.t) V.t += dt * V.warp / 3600;  // the clock starts when she gets under way
+
+    // Move in steps of at most half a cell, so no shallow cell is skipped at high time warp
+    const metres = V.speed * KN_MS * dt * V.warp, n = Math.ceil(Math.abs(metres) / (cellM / 2));
+    for (let i = 0; i < n; i++) {
+      V.pos = offset(V.pos, V.heading, metres / n);
+      const stepNm = Math.abs(metres / n) / 1852, u = ukc(depthAt(...V.pos), Math.abs(V.speed));
+      V.nm += stepNm;
+      if (!(u >= 0)) { V.aground = true; V.speed = 0; return; }  // land or no data counts too
+      V.minU = Math.min(V.minU, u);
+      if (Math.abs(V.speed) > STEER_KN && u < SLOW_UKC) V.fastNm += stepNm;
+    }
+    if (nm(V.pos, end) * 1852 < arriveM) V.arrived = true;
+  }
+
+  function trackStep(dt) {
+    V.t = Math.min(V.stopAt, V.t + dt * V.warp / 3600);
+    const m = at(V.track, Math.min(V.t, V.stops)), d = nm(V.pos, m.p);
+    if (d > 0) { V.heading = bearing(V.pos, m.p); V.nm += d; }
+    V.pos = m.p;
+    V.speed = V.t < V.stops ? m.s.v : 0;
+    if (V.run && V.run.aground && V.t >= V.stops) V.aground = true;
+    if (V.t >= V.stopAt) V.arrived = true;
+  }
+
+  function lookAhead(sp) {  // seabed along the heading, out to about ten seconds of sailing on screen
+    const look = Math.max(2000, Math.max(sp, G.speed) * KN_MS * V.warp * 10), samples = [];
+    let shoreAt = null, worst = null, limit = Infinity;
+    for (let i = 1; i <= 80; i++) {
+      const d = look * i / 80, h = depthAt(...offset(V.pos, V.heading, d));
+      if (!(h > 0)) { shoreAt = d; break; }
+      const u = ukc(h, sp);
+      samples.push({ d, h, u });
+      if (!worst || u < worst.u) worst = { d, h, u };
+      limit = Math.min(limit, safeSpeed(h));
+    }
+    return { look, samples, shoreAt, worst, limit: Math.max(limit, STEER_KN) };
+  }
+
+  const setHTML = (id, html) => { const el = document.getElementById(id); if (el && el.innerHTML !== html) el.innerHTML = html; };
+  const pill = (c, text) => `<span class="pill" style="background:${catColor(c)};color:${c === 2 || c === 3 ? "#111" : "#fff"}">${text}</span>`;
+
+  function drawVoyage() {
+    const sp = Math.abs(V.speed), h = depthAt(...V.pos), T = G.draft + squat(sp);
+    const u = V.aground ? NaN : ukc(h, sp), c = V.aground ? 0 : catOf(u), p = ll(...V.pos);
+
+    shipMarker.setLatLng(p);
+    const svg = shipMarker.getElement()?.querySelector("svg");
+    if (svg) { svg.style.transform = `rotate(${V.heading}deg)`; svg.style.fill = catColor(c); }
+    // Trail coloured by clearance, like your plotted line
+    if (!V.line || V.lineC !== c) {
+      const from = V.line ? V.line.getLatLngs().slice(-1) : [];
+      V.line = L.polyline([...from, p], { pane: "player", renderer: playerRenderer, interactive: false,
+                                          color: catColor(c), weight: 4, opacity: 0.9 }).addTo(trail);
+      V.lineC = c;
+    } else if (!V.line.getLatLngs().slice(-1)[0].equals(p)) {
+      V.line.addLatLng(p);
+    }
+    const g = V.kind === "race" ? at(water.track, Math.min(V.t, water.hours)) : null;
+    if (g) ghost.setLatLng(ll(...g.p));
+    if (V.follow) map.setView(p, map.getZoom(), { animate: false });
+
+    banner.hidden = !V.aground;
+    banner.querySelector("small").textContent =
+      `Clearance under the keel ran out.${V.kind === "helm" ? " Press R to reset." : ""}`;
+
+    const a = lookAhead(sp);
+    setHTML("vSpeed", fmt(V.speed, 1));
+    setHTML("vHdg", String(Math.round(V.heading) % 360).padStart(3, "0"));
+    setHTML("vWarp", `time ×${Math.round(V.warp)}`);
+    setHTML("vHint", V.kind !== "helm" ? ""
+      : !V.t ? "Press <kbd>W</kbd> or <kbd>↑</kbd> to get under way, then steer to B."
+      : sp > STEER_KN && u < SLOW_UKC ? `<span class="bad">Too fast for this water: slow to ${fmt(Math.max(STEER_KN, safeSpeed(h)), 1)} kn</span>`
+      : "");
+    setHTML("vUkc", V.aground ? pill(0, "aground") : pill(c, `${fmt(h - T, 1)} m · ${fmt(u, 0)}%`));
+    setHTML("vDepth", `${fmt(h, 1)} m · ${fmt(squat(sp), 2)} m`);
+    setHTML("vWorst", a.worst ? `${pill(catOf(a.worst.u), fmt(a.worst.h - T, 1) + " m")} in ${dist(a.worst.d)}`
+                              : a.shoreAt !== null ? `land in ${dist(a.shoreAt)}` : "–");
+    setHTML("vLimit", !G.squat ? "none, squat is off"
+      : a.limit >= MAX_AHEAD_KN ? `${MAX_AHEAD_KN}+ kn` : `${fmt(a.limit, 1)} kn`);
+    setHTML("vTime", `${hm(V.t)} <span>(water says ${hm(water.hours)})</span>`);
+    setHTML("vNm", `${fmt(V.nm, 1)} nm <span>(${fmt(nm(V.pos, end), 1)} nm to B)</span>`);
+    if (g) setHTML("vGhost", V.t >= water.hours ? "arrived" : `${fmt(g.s.v, 1)} kn`);
+    drawKeel(a, sp, T);
+  }
+
+  // Keel view, as in Port view: seabed ahead coloured by the clearance it leaves, hull at draft plus squat
+  function drawKeel(a, sp, T) {
+    const cv = document.getElementById("keel");
+    if (!cv) return;
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    }
+    const k = cv.getContext("2d");
+    k.setTransform(dpr, 0, 0, dpr, 0, 0);
+    k.clearRect(0, 0, w, h);
+    const hNow = depthAt(...V.pos);
+    // Depth scale: deep enough to show the seabed near the keel; deeper water is cut off at the bottom
+    const maxZ = Math.min(Math.max(20, T + 4, hNow + 2, ...a.samples.map(s => s.h + 2)), Math.max(4 * G.draft, T + 6, 30));
+    const hullW = 44, top = 14, bottom = 16;
+    const X = d => hullW + d / a.look * (w - hullW - 6), Y = z => top + Math.min(z, maxZ) / maxZ * (h - top - bottom);
+
+    k.fillStyle = "#123049"; k.fillRect(0, Y(0), w, Y(maxZ) - Y(0));
+    const bed = (x0, x1, depth, c) => {
+      k.fillStyle = "#5B4A36"; k.fillRect(x0, Y(depth), x1 - x0, Y(maxZ) - Y(depth));
+      k.fillStyle = catColor(c); k.fillRect(x0, Y(depth) - 1.5, x1 - x0, 3);
+    };
+    if (hNow > 0) bed(0, hullW, hNow, V.aground ? 0 : catOf(ukc(hNow, sp)));
+    let prev = 0;
+    for (const s of a.samples) { bed(X(prev), X(s.d) + 0.5, s.h, catOf(s.u)); prev = s.d; }
+    if (a.shoreAt !== null) {
+      k.fillStyle = "#7A6A55"; k.fillRect(X(a.shoreAt), Y(-1), w - X(a.shoreAt), h);
+      k.fillStyle = "#E6EDF3"; k.font = "10px Barlow, sans-serif"; k.fillText("land", X(a.shoreAt) + 3, Y(maxZ / 2));
+    }
+    k.strokeStyle = "#4AA3FF"; k.lineWidth = 1.5;
+    k.beginPath(); k.moveTo(0, Y(0)); k.lineTo(w, Y(0)); k.stroke();
+
+    k.fillStyle = "#C9D3DD"; k.fillRect(4, Y(-2), hullW - 8, Y(G.draft) - Y(-2));
+    k.fillStyle = "rgba(240,170,40,.8)"; k.fillRect(4, Y(G.draft), hullW - 8, Y(T) - Y(G.draft));
+    k.setLineDash([4, 3]); k.strokeStyle = "rgba(201,211,221,.7)"; k.lineWidth = 1;
+    k.beginPath(); k.moveTo(hullW, Y(T)); k.lineTo(X(a.shoreAt ?? a.look), Y(T)); k.stroke();
+    k.setLineDash([]);
+
+    if (a.worst) {
+      const x = X(a.worst.d), label = `${fmt(a.worst.h - T, 1)} m @ ${dist(a.worst.d)}`;
+      k.strokeStyle = "#FFFFFF"; k.lineWidth = 1;
+      k.beginPath(); k.moveTo(x, Y(T)); k.lineTo(x, Y(a.worst.h)); k.stroke();
+      k.fillStyle = "#FFFFFF"; k.font = "600 11px Barlow, sans-serif";
+      k.fillText(label, Math.min(x + 4, w - k.measureText(label).width - 4), Math.max(Y(T) - 4, 11));
+    }
+    k.fillStyle = "#8B9AAB"; k.font = "10px Barlow, sans-serif";
+    k.fillText("ship", 6, h - 4);
+    const ahead = `${dist(a.look)} ahead`;
+    k.fillText(ahead, w - k.measureText(ahead).width - 6, h - 4);
+  }
+
+  // ----- Input -----
+  function addPoint(p, last = false) {
+    P.pts.push(p);
+    P.speeds.push(P.speeds.length ? P.speeds[P.speeds.length - 1] : G.speed);
+    P.finished = last;
+  }
+
+  map.on("click", e => {
+    if (gameMode !== "plot" || P.finished) return;
+    if (map.latLngToContainerPoint(ll(...end)).distanceTo(e.containerPoint) < 18) addPoint(end, true);
+    else if (corridor.contains(e.latlng)) addPoint([e.latlng.lng, e.latlng.lat]);
+    else tip = "Stay inside the dashed corridor: there is no depth data outside it.";
+    render();
+  });
+  pinB.on("click", () => {
+    if (gameMode === "plot" && !P.finished) { addPoint(end, true); render(); }
+  });
+  map.on("mousemove", e => {
+    if (gameMode === "plot" && !P.finished) rubber.setLatLngs([ll(...P.pts[P.pts.length - 1]), e.latlng]);
+  });
+
+  panel.addEventListener("click", e => {
+    const act = e.target.closest("button")?.dataset.act;
+    if (!act) return;
+    if (act === "helm" || act === "route" || act === "race") return startVoyage(act);
+    const kind = V && V.kind;
+    stopVoyage();
+    if (act === "plot") gameMode = "plot";
+    if (act === "back") gameMode = "idle";
+    if (act === "stop") gameMode = kind === "race" ? "plot" : "idle";
+    if (act === "finish") addPoint(end, true);
+    if (act === "undo" && P.pts.length > 1) { P.pts.pop(); P.speeds.pop(); P.finished = false; }
+    if (act === "clear") { Object.assign(P, { pts: [start], speeds: [], finished: false }); gameMode = "plot"; }
+    render();
+  });
+  panel.addEventListener("change", e => {
+    const k = Number(e.target.dataset.leg);
+    if (isNaN(k)) return;
+    P.speeds[k] = Math.min(30, Math.max(1, Number(e.target.value) || G.speed));
+    render();
+  });
+
+  // Helm keys. Capture phase, so Leaflet's own arrow-key panning never sees them while you steer.
+  const HELM_KEYS = new Set(["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "]);
+  window.addEventListener("keydown", e => {
+    if (!V || gameMode !== "voyage") return;
+    const k = e.key.toLowerCase();
+    if (V.kind === "helm" && HELM_KEYS.has(k)) { keys.add(k); e.preventDefault(); e.stopPropagation(); }
+    else if (k === "r") startVoyage(V.kind);
+    else if (k === "v") V.follow = !V.follow;
+  }, true);
+  window.addEventListener("keyup", e => keys.delete(e.key.toLowerCase()));
+  window.addEventListener("blur", () => keys.clear());
+
+  render();
+})();
 </script>
 </body>
 </html>

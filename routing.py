@@ -23,6 +23,7 @@ from ukc import classify, ukc_percent
 
 M_PER_DEG = 111_320.0
 M_PER_NM = 1852.0
+MAX_CELLS = 400_000  # corridor grid size; bigger corridors are thinned to this
 
 BANDS = [  # by confidence, best first
     {"name": "Confident", "min": 70, "color": "#2E7D32"},
@@ -116,7 +117,7 @@ def _string_pull(nav, pts):
 
 
 def plan_route(grid, src, dst, *, water_level, teff, beam, width_factor, side_margin,
-               min_ukc, preference, pad_km, max_cells=400_000):
+               min_ukc, preference, pad_km, max_cells=MAX_CELLS):
     box = corridor_box(src, dst, pad_km)
     win = grid.window(*box, max_cells=max_cells)
     if win is None:

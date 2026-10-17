@@ -1,12 +1,16 @@
 """Page 2: sail planning."""
+import base64
+
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from common import (box_feature, contour_layer, load_grid, map_limits, png_data_url,
+from common import (JS_CATEGORIES, box_feature, contour_layer, load_grid, map_limits, png_data_url,
                     render_map, require_ships, to_web_mercator)
-from routing import AREAS, BANDS, M_PER_NM, plan_route
+from routing import AREAS, BANDS, M_PER_NM, MAX_CELLS, plan_route
 from ukc import barrass_squat, hex_to_rgb
+
+CB = 0.8  # block coefficient for squat on this page
 
 ships = require_ships()
 grid = load_grid()
@@ -36,7 +40,7 @@ speed = c3.number_input("Speed (knots)", 1.0, 30.0, 10.0, 0.5, key="rspeed")
 water_level = c4.number_input("Water level (m)", -3.0, 8.0, 0.0, 0.1, key="rwl",
                               help="Height above chart datum, such as tide.")
 use_squat = sb.checkbox("Add squat at this speed", value=True, key="rsquat")
-squat = barrass_squat(0.8, speed, False) if use_squat else 0.0
+squat = barrass_squat(CB, speed, False) if use_squat else 0.0
 teff = draft + squat
 
 # ---------- Start and destination ----------
@@ -175,7 +179,8 @@ payload = {"maxBounds": map_limits(grid, ships), "fitBounds": [[r["box"][0], r["
            "viewKey": f"route|{ship_id}|{src}|{dst}|{pad_km}", "corridor": box_feature(r["box"]),
            "src": src, "dst": dst, "dstLabel": dst_label, "bands": BANDS, "areas": AREAS,
            "showAreas": show_areas, "opacity": opacity, "error": r.get("error"),
-           "contours": contour_layer(show_contours), "image": None, "route": None, "ships": None}
+           "contours": contour_layer(show_contours), "image": None, "route": None, "ships": None,
+           "categories": JS_CATEGORIES, "game": None}
 
 if show_areas and "classes" in r:
     cls = r["classes"]
@@ -198,8 +203,16 @@ if "error" not in r:
         "connectors": [{"from": list((src, dst)[i]), "to": list(sn["lonlat"]), "moved_m": sn["moved_m"], "name": sn["name"]}
                        for i, sn in enumerate(r["snaps"]) if sn["moved_m"] > r["cell_m"]],
         "length_nm": r["length_nm"], "conf": r["conf_mean"], "conf_min": r["conf_min"],
-        "min_ukc": r["min_ukc"], "hours": r["length_nm"] / speed, "ship": ship_id, "teff": teff,
+        "min_ukc": r["min_ukc"], "hours": r["length_nm"] / speed, "speed": speed, "ship": ship_id, "teff": teff,
     }
+    # Water depth over the corridor, for the "water says" time and the plot-your-own-route game that
+    # run in the browser. Same window as the route search; decimetres as int16, -32768 = no data.
+    win = grid.window(*r["box"], max_cells=MAX_CELLS)
+    h = water_level - win["z"]
+    dm = np.where(np.isnan(h), -32768, np.round(np.clip(h, -3000, 3000) * 10)).astype("<i2")
+    payload["game"] = {"w": win["w"], "s": win["s"], "cell": win["cell"], "nx": int(h.shape[1]),
+                       "ny": int(h.shape[0]), "depth_dm": base64.b64encode(dm.tobytes()).decode(),
+                       "draft": draft, "cb": CB, "squat": use_squat, "speed": speed}
 
 if show_ships:
     payload["ships"] = [{"id": s.id_ano, "lon": float(s.Longitude), "lat": float(s.Latitude),

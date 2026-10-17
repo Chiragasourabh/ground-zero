@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GroundingZero Prototype</title>
+<style>
+  :root {
+    --bg: #0f1720; --panel: #17212c; --line: #2a3644; --text: #e6edf3; --muted: #8b9aab;
+    --green: #2eaa5a; --amber: #f0aa28; --red: #dc322f; --aground: #78001a; --accent: #4aa3ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .app { display: grid; grid-template-columns: 1fr 360px; height: 100%; }
+  .stage { position: relative; overflow: hidden; }
+  #map { width: 100%; height: 100%; display: block; background: #bac2cc; }
+  .hud { position: absolute; left: 12px; top: 12px; background: rgba(15,23,32,.82);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-variant-numeric: tabular-nums; }
+  .hud b { font-size: 18px; }
+  .banner { position: absolute; left: 50%; top: 40%; transform: translate(-50%,-50%); display: none;
+    background: var(--aground); color: #fff; padding: 14px 22px; border-radius: 10px; font-size: 20px;
+    font-weight: 700; text-align: center; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
+  .banner small { display: block; font-size: 12px; font-weight: 400; opacity: .85; }
+  .keys { position: absolute; left: 12px; bottom: 12px; background: rgba(15,23,32,.82);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; color: var(--muted); font-size: 12px; }
+  kbd { background: #24303d; border: 1px solid #3a4858; border-radius: 4px; padding: 0 5px; color: var(--text); font-size: 11px; }
+  aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 14px; }
+  h1 { font-size: 16px; margin: 0 0 2px; }
+  .sub { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+  section { border-top: 1px solid var(--line); padding: 10px 0; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+  label { display: block; margin: 6px 0 2px; color: var(--muted); }
+  input[type=range] { width: 100%; }
+  select, button { background: #24303d; color: var(--text); border: 1px solid #3a4858; border-radius: 6px; padding: 5px 8px; font: inherit; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-variant-numeric: tabular-nums; }
+  .kv span:nth-child(odd) { color: var(--muted); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 600; color: #111; }
+  #keel { width: 100%; height: 170px; display: block; background: #0b121a; border-radius: 6px; }
+  .legend { display: grid; grid-template-columns: 14px 1fr; gap: 4px 8px; align-items: center; font-size: 12px; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; }
+  .note { color: var(--muted); font-size: 11px; }
+  .seg button.on { border-color: var(--accent); background: #1d3550; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage">
+    <canvas id="map"></canvas>
+    <div class="hud">
+      <div><b id="hudSpeed">0.0</b> kn &nbsp; hdg <b id="hudHdg">000</b>°</div>
+      <div id="hudView" class="note"></div>
+    </div>
+    <div class="banner" id="banner">AGROUND<small>Clearance under the keel ran out. Press R to reset.</small></div>
+    <div class="keys">
+      <kbd>W</kbd>/<kbd>↑</kbd> ahead &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> astern &nbsp;
+      <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> helm &nbsp; <kbd>Space</kbd> stop &nbsp;
+      <kbd>V</kbd> view &nbsp; <kbd>R</kbd> reset
+    </div>
+  </div>
+
+  <aside>
+    <h1>GroundingZero</h1>
+    <div class="sub">UKC risk twin of Cork Harbour · prototype, not for navigation</div>
+
+    <section>
+      <h2>View</h2>
+      <div class="row seg">
+        <button id="viewPort">Port view</button>
+        <button id="viewBridge">Bridge view</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Vessel</h2>
+      <select id="preset"></select>
+      <label>Draft <span id="draftVal"></span></label>
+      <input id="draft" type="range" min="4" max="14" step="0.1">
+      <div class="kv" id="vesselInfo"></div>
+    </section>
+
+    <section>
+      <h2>Tide</h2>
+      <label>Time <span id="tideVal"></span></label>
+      <input id="tide" type="range" min="0" max="2880" step="10">
+      <div class="row"><button id="tideNow">Now</button><span class="note">Synthetic tide, held during sailing</span></div>
+    </section>
+
+    <section>
+      <h2>Keel view · track ahead 2 km</h2>
+      <canvas id="keel"></canvas>
+    </section>
+
+    <section>
+      <h2>Advisory</h2>
+      <div class="kv">
+        <span>Under keel now</span><span id="advNow"></span>
+        <span>Squat (indicative)</span><span id="advSquat"></span>
+        <span>Worst point ahead</span><span id="advWorst"></span>
+        <span>Max safe speed ahead</span><span id="advMax"></span>
+        <span>Next safe tide window</span><span id="advWindow"></span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Seabed</h2>
+      <div class="row"><button id="reseed">Randomise seabed</button><span class="note" id="seedVal"></span></div>
+    </section>
+
+    <section>
+      <h2>Risk grid (this vessel, this speed, this tide)</h2>
+      <div class="legend">
+        <div class="sw" style="background:var(--green)"></div><div>Green · UKC above 50% of draft</div>
+        <div class="sw" style="background:var(--amber)"></div><div>Amber · 10–50%, shallow-water effect</div>
+        <div class="sw" style="background:var(--red)"></div><div>Red · below 10%</div>
+        <div class="sw" style="background:var(--aground)"></div><div>No clearance · keel on the seabed</div>
+      </div>
+      <p class="note">Thresholds are placeholders pending marine-engineer review. Squat: Barrass simplified, doubled in confined water (within 400 m of shore). Ignores heel, waves, trim, survey age.</p>
+      <p class="note">Bathymetry and tide are synthetic placeholders. Real build: EMODnet DTM (CC-BY), Marine Institute tide prediction, Ringaskiddy (CC-BY 4.0), vessel presets from Cerema AIS.</p>
+    </section>
+  </aside>
+</div>
+<script>
+  // Served as a Streamlit component: tell the host page we loaded, or it shows a loading warning
+  parent.postMessage({ isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1 }, "*");
+</script>
+<script type="module" src="sim.js"></script>
+</body>
+</html>
