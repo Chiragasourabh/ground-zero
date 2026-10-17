@@ -6,10 +6,9 @@ services:
       - "8501:8501"
     environment:
       - CSV_PATH=/app/data/ship_to_daftvalues.csv
-      - CONTOURS_PATH=/app/data/contours.json
     restart: unless-stopped
 
-  # One-off job: docker compose run --rm preprocess
+  # One-off job: docker compose run --rm --build preprocess
   preprocess:
     build: .
     image: vessel-map
@@ -19,7 +18,7 @@ services:
       - ./data:/app/data
     environment:
       - BATHY_PATH=/app/data/bathymetry.csv
-      - CONTOURS_PATH=/app/data/contours.json
-      - BATHY_SEP=,          # change to a tab if your file is tab-separated
-      - CELL_DEG=0.005
-      - CONTOUR_STEP=5
+      - BATHY_SEP=,          # use a tab character if your file is tab-separated
+      - GRID_DEG=0.002       # UKC grid cell (~200 m). Smaller = more detail, bigger files
+      - CELL_DEG=0.005       # contour smoothing cell (~500 m)
+      - CONTOUR_STEP=5       # metres between contour lines

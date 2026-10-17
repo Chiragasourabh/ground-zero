@@ -1,0 +1,199 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#0D2B45; --paper:#F3F7F9; --rule:#C9D6DF; --sea:#2E6F95; }
+  html, body, #map { margin:0; height:100%; width:100%; }
+  body, .leaflet-container { font-family: Barlow, "Segoe UI", Roboto, Arial, sans-serif; color:var(--ink); }
+  .leaflet-container { background:#DCE8EE; }
+  .area-img { image-rendering: pixelated; image-rendering: crisp-edges; }
+
+  .panel { position:absolute; z-index:1000; background:var(--paper); border:1px solid var(--rule);
+           border-radius:6px; box-shadow:0 2px 10px rgba(13,43,69,.18); }
+
+  #readout { top:12px; left:12px; padding:10px 14px 12px; min-width:230px; max-width:300px;
+             border-left:6px solid var(--band,#9E9E9E); }
+  #readout .ship { font-size:13px; font-weight:500; color:var(--sea); }
+  #readout .big  { font-size:34px; font-weight:600; line-height:1.05; margin:2px 0; font-variant-numeric:tabular-nums; }
+  #readout .cat  { font-size:15px; font-weight:600; }
+  #readout .sub  { font-size:12.5px; margin-top:6px; line-height:1.45; color:#3C566B; font-variant-numeric:tabular-nums; }
+  #readout.err .big { font-size:20px; }
+
+  #legend { bottom:28px; right:12px; padding:10px 12px; width:250px; font-size:12.5px; }
+  #legend .title { font-weight:600; font-size:13.5px; margin:8px 0 4px; }
+  #legend .title:first-child { margin-top:0; }
+  .row { display:flex; align-items:center; gap:8px; margin:3px 0; }
+  .sw  { width:14px; height:14px; border-radius:3px; flex:none; }
+  .ln  { width:22px; height:5px; border-radius:3px; flex:none; }
+
+  #coords { bottom:28px; left:110px; padding:3px 8px; font-size:12px; font-variant-numeric:tabular-nums; }
+
+  .pin { width:26px; height:26px; border-radius:50%; background:var(--ink); color:#fff; font-weight:600;
+         font-size:13px; display:flex; align-items:center; justify-content:center;
+         border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.4); }
+  .pin.dst { background:#2E6F95; }
+
+  .leaflet-tooltip, .leaflet-popup-content { font-family:inherit; font-size:12.5px; color:var(--ink); line-height:1.45; }
+  .leaflet-tooltip b, .leaflet-popup-content b { font-weight:600; }
+  .tag { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
+  .tag i { width:11px; height:11px; border-radius:2px; display:inline-block; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="readout" class="panel"></div>
+<div id="legend" class="panel"></div>
+<div id="coords" class="panel">Move over the map</div>
+<script>
+const D = __DATA__;
+
+const fmt = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? "n/a" : Number(v).toFixed(d);
+const tag = (color, name) => `<span class="tag"><i style="background:${color}"></i>${name}</span>`;
+const ll = (lon, lat) => L.latLng(lat, lon);
+const bbox = b => L.latLngBounds(ll(b[0][0], b[0][1]), ll(b[1][0], b[1][1]));
+const bandOf = c => D.bands.findIndex(b => c >= b.min);
+
+// ---------- Readout ----------
+(function () {
+  const el = document.getElementById("readout");
+  const R = D.route;
+  if (!R) {
+    el.classList.add("err");
+    el.style.setProperty("--band", "#C62828");
+    el.innerHTML = `<div class="ship">Route planning</div><div class="big">No safe route</div>
+      <div class="sub">${D.error || ""}</div>`;
+    return;
+  }
+  const b = D.bands[bandOf(R.conf)];
+  el.style.setProperty("--band", b.color);
+  const h = Math.floor(R.hours), m = Math.round((R.hours % 1) * 60);
+  el.innerHTML = `<div class="ship">Ship ${R.ship} to ${D.dstLabel}</div>
+    <div class="big">${fmt(R.length_nm, 1)} nm</div>
+    <div class="cat">${fmt(R.conf, 0)}% confidence, ${b.name.toLowerCase()}</div>
+    <div class="sub">About ${h} h ${String(m).padStart(2, "0")} min at planned speed<br>
+      Lowest UKC ${fmt(R.min_ukc, 0)}%, draft used ${fmt(R.teff, 2)} m
+      ${(R.connectors || []).map(c => `<br><span style="color:#C62828;font-weight:600">${c.name === "start" ? "Start" : "Destination"} is outside safe water, ${fmt(c.moved_m / 1852, 2)} nm off the route</span>`).join("")}</div>`;
+})();
+
+// ---------- Legend ----------
+(function () {
+  const el = document.getElementById("legend");
+  let html = `<div class="title">Route confidence</div>` +
+    D.bands.map(b => `<div class="row"><div class="ln" style="background:${b.color}"></div>${b.name}
+      <span style="color:#5B7385">${b.min === 0 ? "below 40%" : b.min === 70 ? "70% and up" : "40 to 70%"}</span></div>`).join("");
+  if (D.showAreas && D.image) {
+    html += `<div class="title">Water for this ship</div>` +
+      D.areas.map(a => `<div class="row"><div class="sw" style="background:${a.color}"></div>${a.name}</div>`).join("");
+  }
+  el.innerHTML = html;
+})();
+
+// ---------- Map, locked to the data area ----------
+const limit = bbox(D.maxBounds);
+const map = L.map("map", { zoomControl: false, preferCanvas: true, zoomSnap: 0.25,
+                           maxBounds: limit, maxBoundsViscosity: 1.0 });
+L.control.zoom({ position: "topright" }).addTo(map);
+L.control.scale({ imperial: true, metric: true, position: "bottomleft" }).addTo(map);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
+
+let restored = false;
+try {
+  const v = JSON.parse(window.name || "null");
+  if (v && v.key === D.viewKey) { map.setView(v.center, v.zoom, { animate: false }); restored = true; }
+} catch (e) {}
+if (!restored) map.fitBounds(bbox(D.fitBounds), { padding: [40, 40], animate: false });
+map.setMinZoom(Math.max(0, map.getBoundsZoom(limit, true) - 0.25));
+map.on("moveend", () => {
+  try { window.name = JSON.stringify({ key: D.viewKey, center: map.getCenter(), zoom: map.getZoom() }); } catch (e) {}
+});
+
+// ---------- Coordinates readout and click-to-read ----------
+const coordsEl = document.getElementById("coords");
+map.on("mousemove", e => { coordsEl.textContent = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`; });
+map.on("click", e => {
+  L.popup().setLatLng(e.latlng)
+    .setContent(`<b>Lat</b> ${e.latlng.lat.toFixed(4)}<br><b>Lon</b> ${e.latlng.lng.toFixed(4)}<br>
+      <span style="color:#5B7385">Type these into the destination fields to route here.</span>`)
+    .openOn(map);
+});
+
+// ---------- Layers ----------
+if (D.showAreas && D.image) {
+  L.imageOverlay(D.image.url, D.image.bounds, { opacity: D.opacity, className: "area-img", interactive: false }).addTo(map);
+}
+if (D.contours) {
+  L.geoJSON(D.contours, {
+    style: f => ({ color: f.properties.color, weight: 1, opacity: 0.7 }),
+    onEachFeature: (f, layer) => layer.bindTooltip(`<b>Depth contour:</b> ${fmt(f.properties.depth)} m`, { sticky: true }),
+  }).addTo(map);
+}
+L.geoJSON(D.corridor, { interactive: false,
+  style: { color: "#0D2B45", weight: 1.2, dashArray: "6 4", fill: false, opacity: 0.7 } }).addTo(map);
+
+// Straight line for comparison
+L.polyline([ll(...D.src), ll(...D.dst)], { color: "#0D2B45", weight: 1.5, dashArray: "2 6", opacity: 0.6, interactive: false }).addTo(map);
+
+map.createPane("route").style.zIndex = 440;
+map.createPane("marks").style.zIndex = 460;
+const routeRenderer = L.canvas({ pane: "route", tolerance: 6 });
+
+if (D.route) {
+  const R = D.route;
+  // Halo under the stretches that need care
+  R.segments.filter(s => s.band > 0).forEach(s => {
+    L.polyline(s.coords.map(c => ll(...c)), { renderer: routeRenderer, pane: "route", interactive: false,
+      color: D.bands[s.band].color, weight: 16, opacity: 0.22, lineCap: "round" }).addTo(map);
+  });
+  // White casing, then the coloured route
+  const all = R.segments.flatMap(s => s.coords.map(c => ll(...c)));
+  L.polyline(all, { renderer: routeRenderer, pane: "route", interactive: false, color: "#FFFFFF", weight: 8, opacity: 0.95 }).addTo(map);
+  R.segments.forEach(s => {
+    const b = D.bands[s.band];
+    L.polyline(s.coords.map(c => ll(...c)), { renderer: routeRenderer, pane: "route", color: b.color, weight: 5, opacity: 1 })
+      .bindTooltip(`${tag(b.color, b.name)}<br><b>Confidence:</b> ${fmt(s.conf, 0)}%<br>
+        <b>Lowest UKC:</b> ${fmt(s.min_ukc, 0)}%<br><b>Nearest shallows:</b> ${fmt(s.min_clear, 0)} m<br>
+        <b>Length:</b> ${fmt(s.length_nm, 2)} nm`, { sticky: true })
+      .addTo(map);
+  });
+  // Start/destination outside safe water: dashed connector to where the route begins
+  (R.connectors || []).forEach(c => {
+    L.polyline([ll(...c.from), ll(...c.to)], { renderer: routeRenderer, pane: "route", color: "#C62828",
+      weight: 3, dashArray: "4 6", opacity: 0.9 })
+      .bindTooltip(`<b>Outside safe water</b><br>The ${c.name} is too shallow or narrow for this ship.<br>
+        Route ${c.name === "start" ? "begins" : "ends"} ${fmt(c.moved_m, 0)} m away.`, { sticky: true })
+      .addTo(map);
+  });
+  // Turning points
+  R.waypoints.slice(1, -1).forEach((w, i) => {
+    L.circleMarker(ll(w.lon, w.lat), { renderer: routeRenderer, pane: "route", radius: 4,
+      color: "#0D2B45", weight: 2, fillColor: "#FFFFFF", fillOpacity: 1 })
+      .bindTooltip(`<b>Waypoint ${i + 1}</b><br>${fmt(w.lat, 4)}, ${fmt(w.lon, 4)}<br>
+        <b>Course to next:</b> ${fmt(w.course, 0)}°<br><b>Next leg:</b> ${fmt(w.leg_nm, 2)} nm`, { direction: "top" })
+      .addTo(map);
+  });
+}
+
+// Other ships
+if (D.ships) {
+  const shipRenderer = L.canvas({ pane: "marks" });
+  D.ships.forEach(s => {
+    L.circleMarker(ll(s.lon, s.lat), { renderer: shipRenderer, pane: "marks", radius: 4,
+      color: "#FFFFFF", weight: 1, fillColor: "#5B7385", fillOpacity: 0.9 })
+      .bindTooltip(`<b>id_ano:</b> ${s.id}<br><b>Statut de navigation:</b> ${s.statut}<br>
+        <b>Tirant d'eau:</b> ${fmt(s.draft, 2)} m`, { direction: "top" })
+      .addTo(map);
+  });
+}
+
+// Start and destination pins
+const pin = (cls, label) => L.divIcon({ className: "", html: `<div class="pin ${cls}">${label}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+L.marker(ll(...D.src), { icon: pin("", "A"), pane: "marks" }).bindTooltip("<b>Start</b>", { direction: "top", offset: [0, -12] }).addTo(map);
+L.marker(ll(...D.dst), { icon: pin("dst", "B"), pane: "marks" }).bindTooltip(`<b>${D.dstLabel}</b>`, { direction: "top", offset: [0, -12] }).addTo(map);
+</script>
+</body>
+</html>
