@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from common import (box_feature, cat_color, cat_name, contour_layer, load_grid, map_limits,
+from common import (JS_CATEGORIES, box_feature, cat_color, cat_name, contour_layer, load_grid, map_limits,
                     png_data_url, render_map, require_ships, to_web_mercator)
 from ukc import CATEGORIES, CAT_RGB, barrass_squat, box_around, classify, ukc_percent
 
@@ -59,9 +59,7 @@ show_contours = sb.checkbox("Bathymetry contours", value=True)
 show_ships = sb.checkbox("All ships (coloured by their own UKC)", value=True)
 
 # ---------- Calculation (only inside the bounding box) ----------
-# Categories for the browser; infinite ends become large numbers for JSON
-js_categories = [{**c, "lo": max(c["lo"], -1e9), "hi": min(c["hi"], 1e9)} for c in CATEGORIES]
-payload = {"categories": js_categories, "teff": teff, "opacity": opacity, "showUkc": show_ukc,
+payload = {"categories": JS_CATEGORIES, "teff": teff, "opacity": opacity, "showUkc": show_ukc,
            "stride": 1, "image": None, "hover": None, "stats": None, "aoi": None,
            "contours": None, "ships": None}
 

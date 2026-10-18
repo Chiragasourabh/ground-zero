@@ -1,12 +1,45 @@
 """Page 2: sail planning."""
+import base64
+
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from common import (box_feature, contour_layer, load_grid, map_limits, png_data_url,
+from common import (JS_CATEGORIES, box_feature, contour_layer, load_grid, map_limits, png_data_url,
                     render_map, require_ships, to_web_mercator)
-from routing import AREAS, BANDS, M_PER_NM, plan_route
+from routing import AREAS, BANDS, M_PER_NM, MAX_CELLS, plan_route
 from ukc import barrass_squat, hex_to_rgb
+
+CB = 0.8  # block coefficient for squat on this page
+
+# Harbour positions, each moved onto the nearest grid water at least 12 m deep (within about 1 km).
+# The route still snaps to the nearest water deep and wide enough for the ship.
+PORTS = {
+    "Brest": (-4.4860, 48.3710),
+    "Roscoff": (-3.9620, 48.7200),
+    "Lorient": (-3.3580, 47.7300),
+    "Saint-Nazaire": (-2.1980, 47.2660),
+    "La Rochelle (La Pallice)": (-1.2280, 46.1580),
+    "Bordeaux (Le Verdon)": (-1.0580, 45.5640),
+    "Bayonne": (-1.5260, 43.5300),
+    "Saint-Malo": (-2.0380, 48.6460),
+    "Cherbourg": (-1.6180, 49.6500),
+    "Le Havre": (0.0920, 49.4780),
+    "Calais": (1.8620, 50.9700),
+    "Dunkerque": (2.3520, 51.0600),
+}
+
+
+def picked(name):
+    """A point chosen on the map ("Start here" / "Destination here"), passed in the URL as lon,lat."""
+    try:
+        lon, lat = (float(v) for v in st.query_params.get(name, "").split(","))
+        return lon, lat
+    except ValueError:
+        return None
+
+
+picked_src, picked_dst, picked_ship = picked("start"), picked("dest"), st.query_params.get("ship")
 
 ships = require_ships()
 grid = load_grid()
@@ -22,7 +55,8 @@ if grid is None:
 # ---------- Ship ----------
 status_by_id = dict(zip(ships["id_ano"], ships["Statut_de_navigation"].astype(str)))
 ids = ships["id_ano"].tolist()
-ship_id = sb.selectbox("Ship", ids, format_func=lambda i: f"{i} ({status_by_id.get(i, '')})", key="route_ship")
+ship_id = sb.selectbox("Ship", ids, index=ids.index(picked_ship) if picked_ship in ids else 0,
+                       format_func=lambda i: f"{i} ({status_by_id.get(i, '')})", key="route_ship")
 ship = ships.loc[ships["id_ano"] == ship_id].iloc[0]
 recorded = float(ship["Tirant_d_eau"]) if pd.notna(ship["Tirant_d_eau"]) else 0.0
 
@@ -36,20 +70,25 @@ speed = c3.number_input("Speed (knots)", 1.0, 30.0, 10.0, 0.5, key="rspeed")
 water_level = c4.number_input("Water level (m)", -3.0, 8.0, 0.0, 0.1, key="rwl",
                               help="Height above chart datum, such as tide.")
 use_squat = sb.checkbox("Add squat at this speed", value=True, key="rsquat")
-squat = barrass_squat(0.8, speed, False) if use_squat else 0.0
+squat = barrass_squat(CB, speed, False) if use_squat else 0.0
 teff = draft + squat
 
 # ---------- Start and destination ----------
 sb.subheader("Voyage")
-src_mode = sb.radio("Start", ["Ship position", "Coordinates"], horizontal=True, key="src_mode")
+src_mode = sb.radio("Start", ["Ship position", "Port", "Coordinates"], index=2 if picked_src else 0,
+                    horizontal=True, key="src_mode")
 if src_mode == "Ship position":
     src = (float(ship["Longitude"]), float(ship["Latitude"]))
+elif src_mode == "Port":
+    src = PORTS[sb.selectbox("Start port", list(PORTS), key="sport")]
 else:
+    slon, slat = picked_src or (float(ship["Longitude"]), float(ship["Latitude"]))
     a, b = sb.columns(2)
-    src = (b.number_input("Start lon", value=float(ship["Longitude"]), format="%.4f", key="slon"),
-           a.number_input("Start lat", value=float(ship["Latitude"]), format="%.4f", key="slat"))
+    src = (b.number_input("Start lon", value=slon, format="%.4f", key="slon"),
+           a.number_input("Start lat", value=slat, format="%.4f", key="slat"))
 
-dst_mode = sb.radio("Destination", ["Another ship", "Coordinates"], horizontal=True, key="dst_mode")
+dst_mode = sb.radio("Destination", ["Another ship", "Port", "Coordinates"], index=2 if picked_dst else 0,
+                    horizontal=True, key="dst_mode")
 others = [i for i in ids if i != ship_id]
 if dst_mode == "Another ship" and others:
     far = ships.loc[ships["id_ano"] != ship_id].assign(
@@ -59,13 +98,17 @@ if dst_mode == "Another ship" and others:
     d = ships.loc[ships["id_ano"] == dst_id].iloc[0]
     dst = (float(d["Longitude"]), float(d["Latitude"]))
     dst_label = f"Ship {dst_id}"
+elif dst_mode == "Port":
+    dst_label = sb.selectbox("Destination port", list(PORTS), key="dport")
+    dst = PORTS[dst_label]
 else:
     w, s, e, n = grid.bounds()
+    dlon, dlat = picked_dst or (round((w + e) / 2, 4), round((s + n) / 2, 4))
     a, b = sb.columns(2)
-    dst = (b.number_input("Dest lon", value=round((w + e) / 2, 4), format="%.4f", key="dlon"),
-           a.number_input("Dest lat", value=round((s + n) / 2, 4), format="%.4f", key="dlat"))
+    dst = (b.number_input("Dest lon", value=dlon, format="%.4f", key="dlon"),
+           a.number_input("Dest lat", value=dlat, format="%.4f", key="dlat"))
     dst_label = "Destination"
-    sb.caption("Tip: click the map to read coordinates.")
+sb.caption("Tip: click the map and choose Start here or Destination here.")
 
 with sb.expander("Safety rules"):
     min_ukc = st.select_slider("Minimum UKC", options=[10, 20, 50], value=20,
@@ -172,10 +215,11 @@ with results:
 
 # ---------- Map payload ----------
 payload = {"maxBounds": map_limits(grid, ships), "fitBounds": [[r["box"][0], r["box"][1]], [r["box"][2], r["box"][3]]],
-           "viewKey": f"route|{ship_id}|{src}|{dst}|{pad_km}", "corridor": box_feature(r["box"]),
+           "viewKey": f"route|{ship_id}|{src}|{dst}|{pad_km}", "shipId": ship_id, "corridor": box_feature(r["box"]),
            "src": src, "dst": dst, "dstLabel": dst_label, "bands": BANDS, "areas": AREAS,
            "showAreas": show_areas, "opacity": opacity, "error": r.get("error"),
-           "contours": contour_layer(show_contours), "image": None, "route": None, "ships": None}
+           "contours": contour_layer(show_contours), "image": None, "route": None, "ships": None,
+           "categories": JS_CATEGORIES, "game": None}
 
 if show_areas and "classes" in r:
     cls = r["classes"]
@@ -198,8 +242,16 @@ if "error" not in r:
         "connectors": [{"from": list((src, dst)[i]), "to": list(sn["lonlat"]), "moved_m": sn["moved_m"], "name": sn["name"]}
                        for i, sn in enumerate(r["snaps"]) if sn["moved_m"] > r["cell_m"]],
         "length_nm": r["length_nm"], "conf": r["conf_mean"], "conf_min": r["conf_min"],
-        "min_ukc": r["min_ukc"], "hours": r["length_nm"] / speed, "ship": ship_id, "teff": teff,
+        "min_ukc": r["min_ukc"], "hours": r["length_nm"] / speed, "speed": speed, "ship": ship_id, "teff": teff,
     }
+    # Water depth over the corridor, for the "water says" time and the plot-your-own-route game that
+    # run in the browser. Same window as the route search; decimetres as int16, -32768 = no data.
+    win = grid.window(*r["box"], max_cells=MAX_CELLS)
+    h = water_level - win["z"]
+    dm = np.where(np.isnan(h), -32768, np.round(np.clip(h, -3000, 3000) * 10)).astype("<i2")
+    payload["game"] = {"w": win["w"], "s": win["s"], "cell": win["cell"], "nx": int(h.shape[1]),
+                       "ny": int(h.shape[0]), "depth_dm": base64.b64encode(dm.tobytes()).decode(),
+                       "draft": draft, "cb": CB, "squat": use_squat, "speed": speed}
 
 if show_ships:
     payload["ships"] = [{"id": s.id_ano, "lon": float(s.Longitude), "lat": float(s.Latitude),

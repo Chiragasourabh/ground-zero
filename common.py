@@ -26,6 +26,9 @@ FULLSCREEN_CSS = """
   section.main [data-testid="stVerticalBlock"], [data-testid="stMain"] [data-testid="stVerticalBlock"] { gap:0 !important; }
   [data-testid="stMain"], section.main { overflow:hidden; }
   iframe { height:100vh !important; width:100% !important; display:block; border:0; }
+  /* Logo bigger than st.logo's 32 px cap, and white on the dark theme (it follows the system setting) */
+  [data-testid="stSidebarHeader"] [data-testid="stLogo"] { height:3rem; max-width:100%; }
+  @media (prefers-color-scheme: dark) { [data-testid="stLogo"] { filter:invert(1); } }
 </style>
 """
 
@@ -59,6 +62,10 @@ def load_contours(path):
                       "geometry": {"type": "LineString", "coordinates": line["path"]},
                       "properties": {"depth": line["depth"], "color": f"#{r:02x}{g:02x}{b:02x}"}})
     return {"type": "FeatureCollection", "features": feats}
+
+
+# Categories for the browser; infinite ends become large numbers for JSON
+JS_CATEGORIES = [{**c, "lo": max(c["lo"], -1e9), "hi": min(c["hi"], 1e9)} for c in CATEGORIES]
 
 
 def png_data_url(rgba):
@@ -111,6 +118,13 @@ def render_map(template_name, payload, height=900):
     template = (HERE / template_name).read_text()
     html = template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/"))
     components.html(html, height=height)
+
+
+# Port view: the Cork Harbour sim in port_view/ (plain HTML/JS). A declared component makes Streamlit
+# serve the folder with proper content types, so its ES modules and image load without a second server.
+# Declared here because Streamlit only allows it in an importable module, not in a page script.
+port_view = components.declare_component("port_view", path=str(HERE / "port_view"))
+
 
 def to_web_mercator(rgba, south, north):
     """Leaflet stretches image overlays evenly in Web Mercator, but the grid rows are even in
