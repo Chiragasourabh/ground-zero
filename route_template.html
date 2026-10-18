@@ -41,6 +41,10 @@
   .leaflet-tooltip b, .leaflet-popup-content b { font-weight:600; }
   .tag { display:inline-flex; align-items:center; gap:6px; font-weight:600; }
   .tag i { width:11px; height:11px; border-radius:2px; display:inline-block; }
+  .pick { display:flex; gap:6px; margin-top:6px; }
+  .pick button { font:inherit; font-size:12px; padding:3px 8px; border:1px solid var(--ink); border-radius:4px;
+                 background:#fff; color:var(--ink); cursor:pointer; }
+  .pick button:first-child { background:var(--ink); color:#fff; }
 
   #game { top:12px; right:56px; width:300px; padding:10px 14px 12px; font-size:13px; line-height:1.4;
           max-height:calc(100% - 330px); overflow-y:auto; }
@@ -150,7 +154,8 @@ try {
   const v = JSON.parse(window.name || "null");
   if (v && v.key === D.viewKey) { map.setView(v.center, v.zoom, { animate: false }); restored = true; }
 } catch (e) {}
-if (!restored) map.fitBounds(bbox(D.fitBounds), { padding: [40, 40], animate: false });
+// Keep the voyage clear of the Sail panel on the right
+if (!restored) map.fitBounds(bbox(D.fitBounds), { paddingTopLeft: [40, 40], paddingBottomRight: [D.game ? 360 : 40, 40], animate: false });
 map.setMinZoom(Math.max(0, map.getBoundsZoom(limit, true) - 0.25));
 map.on("moveend", () => {
   try { window.name = JSON.stringify({ key: D.viewKey, center: map.getCenter(), zoom: map.getZoom() }); } catch (e) {}
@@ -159,12 +164,31 @@ map.on("moveend", () => {
 // ---------- Coordinates readout and click-to-read ----------
 const coordsEl = document.getElementById("coords");
 map.on("mousemove", e => { coordsEl.textContent = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`; });
+// Streamlit can't read values back from this map, so a picked point goes into the page URL
+// (?start=lon,lat&dest=lon,lat&ship=id) and the app reloads with it. Both ends are written so the other stays put.
+function pickVoyage(which, lonlat) {
+  const fix = p => p.map(v => Number(v).toFixed(5)).join(",");
+  const url = new URL(window.parent.location.href);
+  url.searchParams.set("start", fix(which === "start" ? lonlat : D.src));
+  url.searchParams.set("dest", fix(which === "dest" ? lonlat : D.dst));
+  url.searchParams.set("ship", D.shipId);
+  // This frame's sandbox forbids navigating the app page, but it shares the page's origin,
+  // so hand the navigation to a function that belongs to the app page and runs there.
+  window.parent.setTimeout(new window.parent.Function("href", "window.location.href = href"), 0, url.href);
+}
+
 map.on("click", e => {
   if (gameMode === "plot") return;  // clicks add waypoints instead, see the game below
-  L.popup().setLatLng(e.latlng)
-    .setContent(`<b>Lat</b> ${e.latlng.lat.toFixed(4)}<br><b>Lon</b> ${e.latlng.lng.toFixed(4)}<br>
-      <span style="color:#5B7385">Type these into the destination fields to route here.</span>`)
-    .openOn(map);
+  const p = [e.latlng.lng, e.latlng.lat], el = document.createElement("div");
+  el.innerHTML = `<b>Lat</b> ${p[1].toFixed(4)}<br><b>Lon</b> ${p[0].toFixed(4)}
+    <div class="pick"><button data-pick="start">Start here</button><button data-pick="dest">Destination here</button></div>`;
+  el.addEventListener("click", ev => {
+    const which = ev.target.dataset.pick;
+    if (!which) return;
+    try { pickVoyage(which, p); }
+    catch (err) { el.querySelector(".pick").textContent = "Type these into the Start or Destination fields."; }
+  });
+  L.popup().setLatLng(e.latlng).setContent(el).openOn(map);
 });
 
 // ---------- Layers ----------
