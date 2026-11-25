@@ -150,12 +150,13 @@ def box_feature(box):
 def wave_layer_payload(sb, key):
     """Sidebar controls for the animated wave layer, and the field to send to the map (None when off)."""
     waves = load_waves(WAVE_CSV)
-    show = sb.checkbox("Wave direction (animated)", value=waves is not None, disabled=waves is None, key=f"{key}_show",
-                       help="Copernicus Marine global wave model, 1/12° grid. The lines move the way the waves "
-                            "travel; faster lines are faster (deep-water group speed)."
+    show = sb.checkbox("Waves (animated)", value=waves is not None, disabled=waves is None, key=f"{key}_show",
+                       help="Copernicus Marine global wave model, 1/12° grid. Dashes are wave crests drifting "
+                            "the way the waves travel, faster where the waves travel faster (deep-water group speed)."
                        if waves else f"No wave data found at {WAVE_CSV}.")
     if not (show and waves):
         return None
+    field = sb.checkbox("Colour the sea by wave speed", value=True, key=f"{key}_field")
     i = 0
     if len(waves["steps"]) > 1:
         i = sb.select_slider("Wave time step", options=list(range(len(waves["steps"]))),
@@ -163,7 +164,7 @@ def wave_layer_payload(sb, key):
     sel = waves["steps"][i]
     label = f"{sel['label']} of {len(waves['steps'])}" if sel["label"].startswith("Step") else sel["label"]
     return {k: waves[k] for k in ("lat0", "lon0", "dlat", "dlon", "nx", "ny")} | {
-        "u": sel["u"], "v": sel["v"], "label": label}
+        "u": sel["u"], "v": sel["v"], "label": label, "field": field}
 
 
 def render_map(template_name, payload, height=900):

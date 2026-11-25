@@ -5,10 +5,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY *.py *.html ./
+COPY *.py *.html *.js ./
 COPY port_view/ ./port_view/
 COPY assets/ ./assets/
 COPY data/ ./data/
+COPY WaveData/ ./WaveData/
 
 EXPOSE 8501
 
