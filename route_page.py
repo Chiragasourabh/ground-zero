@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from common import (JS_CATEGORIES, box_feature, contour_layer, load_grid, map_limits, png_data_url,
-                    render_map, require_ships, to_web_mercator)
+                    render_map, require_ships, to_web_mercator, wave_layer_payload)
 from routing import AREAS, BANDS, M_PER_NM, MAX_CELLS, plan_route
 from ukc import barrass_squat, hex_to_rgb
 
@@ -128,6 +128,7 @@ show_areas = sb.checkbox("Sailable area", value=True, key="rareas")
 opacity = sb.slider("Area opacity", 0.1, 1.0, 0.45, 0.05, disabled=not show_areas, key="ropac")
 show_contours = sb.checkbox("Bathymetry contours", value=False, key="rcont")
 show_ships = sb.checkbox("Other ships", value=True, key="rships")
+waves = wave_layer_payload(sb, "route_waves")
 
 
 # ---------- Plan (cached: same inputs give an instant answer) ----------
@@ -219,7 +220,7 @@ payload = {"maxBounds": map_limits(grid, ships), "fitBounds": [[r["box"][0], r["
            "src": src, "dst": dst, "dstLabel": dst_label, "bands": BANDS, "areas": AREAS,
            "showAreas": show_areas, "opacity": opacity, "error": r.get("error"),
            "contours": contour_layer(show_contours), "image": None, "route": None, "ships": None,
-           "categories": JS_CATEGORIES, "game": None}
+           "categories": JS_CATEGORIES, "game": None, "waves": waves}
 
 if show_areas and "classes" in r:
     cls = r["classes"]

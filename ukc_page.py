@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from common import (JS_CATEGORIES, box_feature, cat_color, cat_name, contour_layer, load_grid, map_limits,
-                    png_data_url, render_map, require_ships, to_web_mercator)
+                    png_data_url, render_map, require_ships, to_web_mercator, wave_layer_payload)
 from ukc import CATEGORIES, CAT_RGB, barrass_squat, box_around, classify, ukc_percent
 
 MAX_IMAGE_CELLS = 1_500_000   # UKC overlay is thinned above this
@@ -57,11 +57,12 @@ show_ukc = sb.checkbox("UKC colours", value=True)
 opacity = sb.slider("UKC opacity", 0.1, 1.0, 0.65, 0.05, disabled=not show_ukc)
 show_contours = sb.checkbox("Bathymetry contours", value=True)
 show_ships = sb.checkbox("All ships (coloured by their own UKC)", value=True)
+waves = wave_layer_payload(sb, "ukc_waves")
 
 # ---------- Calculation (only inside the bounding box) ----------
 payload = {"categories": JS_CATEGORIES, "teff": teff, "opacity": opacity, "showUkc": show_ukc,
            "stride": 1, "image": None, "hover": None, "stats": None, "aoi": None,
-           "contours": None, "ships": None}
+           "contours": None, "ships": None, "waves": waves}
 
 if grid is None:
     sb.warning("No bathymetry grid found. Run `docker compose run --rm --build preprocess`, then rebuild.")

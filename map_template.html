@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>__WAVE_LAYER__</script>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root { --ink:#0D2B45; --paper:#F3F7F9; --rule:#C9D6DF; --sea:#2E6F95; }
@@ -147,22 +148,25 @@ if (D.ships) {
   }).addTo(map));
 }
 
-// ---------- Hover over the UKC grid ----------
+// ---------- Waves: particles that drift the way the waves travel (wave_layer.js) ----------
+const waveAt = D.waves ? addWaveLayer(map, D.waves, { bottom: 40 }) : () => null;
+
+// ---------- Hover over the UKC grid and the wave field ----------
 const gridTip = L.tooltip({ direction: "top", offset: [0, -8] });
 map.on("mousemove", (e) => {
-  const g = D.hover;
-  if (!g || overFeature) return;
-  const ix = Math.floor((e.latlng.lng - g.w) / g.cell), iy = Math.floor((e.latlng.lat - g.s) / g.cell);
-  const h = (ix >= 0 && iy >= 0 && ix < g.nx && iy < g.ny) ? g.h[iy * g.nx + ix] : null;
-  if (h === null) { gridTip.remove(); return; }
-  let html;
-  if (h <= 0) html = `<b>Dry at this water level</b><br>h ${fmt(h)} m`;
-  else {
+  if (overFeature) return;
+  const g = D.hover, lines = [];
+  const ix = g ? Math.floor((e.latlng.lng - g.w) / g.cell) : -1, iy = g ? Math.floor((e.latlng.lat - g.s) / g.cell) : -1;
+  const h = (g && ix >= 0 && iy >= 0 && ix < g.nx && iy < g.ny) ? g.h[iy * g.nx + ix] : null;
+  if (h !== null && h <= 0) lines.push(`<b>Dry at this water level</b><br>h ${fmt(h)} m`);
+  else if (h !== null) {
     const u = (h - D.teff) / D.teff * 100, c = catOf(u);
-    html = `<b>Water depth h:</b> ${fmt(h)} m<br><b>UKC:</b> ${fmt(u, 0)}%<br>
-      ${c ? tag(c.color, c.name) : ""}`;
+    lines.push(`<b>Water depth h:</b> ${fmt(h)} m<br><b>UKC:</b> ${fmt(u, 0)}%<br>${c ? tag(c.color, c.name) : ""}`);
   }
-  gridTip.setLatLng(e.latlng).setContent(html);
+  const wv = waveAt(e.latlng.lat, e.latlng.lng);
+  if (wv) lines.push(`<b>Waves:</b> ${waveText(wv)}`);
+  if (!lines.length) { gridTip.remove(); return; }
+  gridTip.setLatLng(e.latlng).setContent(lines.join("<br>"));
   if (!map.hasLayer(gridTip)) gridTip.openOn(map);
 });
 map.on("mouseout", () => gridTip.remove());

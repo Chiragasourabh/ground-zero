@@ -18,6 +18,7 @@ DATA = os.getenv("DATA_DIR", str(HERE / "data"))
 SHIPS_CSV = os.getenv("CSV_PATH", f"{DATA}/ship_to_daftvalues.csv")
 CONTOURS_JSON = f"{DATA}/contours.json"
 GRID_NPY, GRID_META = f"{DATA}/bathy_grid.npy", f"{DATA}/bathy_grid.json"
+WAVE_CSV = os.getenv("WAVE_CSV", str(HERE / "WaveData" / "Wave Movement Data.csv"))
 
 FULLSCREEN_CSS = """
 <style>
@@ -62,6 +63,38 @@ def load_contours(path):
                       "geometry": {"type": "LineString", "coordinates": line["path"]},
                       "properties": {"depth": line["depth"], "color": f"#{r:02x}{g:02x}{b:02x}"}})
     return {"type": "FeatureCollection", "features": feats}
+
+
+@st.cache_data
+def load_waves(path):
+    """Copernicus Marine global wave model (GLOBAL_ANALYSISFORECAST_WAV_001_027, 1/12 degree grid) as one
+    velocity field per time step. wave_u / wave_v are the deep-water group velocity in the direction the
+    waves travel (m/s, east and north), as exported by WaveData/Extract Wave Notebook.ipynb."""
+    if not os.path.exists(path):
+        return None
+    df = pd.read_csv(path)
+    if "time" in df.columns:
+        steps = [(str(t), g) for t, g in df.groupby("time", sort=True)]
+    else:
+        # The current export has no time column. Each time step is a block sorted by latitude,
+        # so a new block starts wherever the latitude drops back.
+        block = (df["latitude"].diff() < 0).cumsum()
+        steps = [(f"Step {i + 1}", g) for i, g in df.groupby(block)]
+    lats, lons = np.sort(df["latitude"].unique()), np.sort(df["longitude"].unique())
+    dlat, dlon = float(np.median(np.diff(lats))), float(np.median(np.diff(lons)))
+    lat0, lon0 = float(lats[0]), float(lons[0])
+    ny = int(round((lats[-1] - lat0) / dlat)) + 1
+    nx = int(round((lons[-1] - lon0) / dlon)) + 1
+
+    def flat(g, col):
+        a = np.full(ny * nx, np.nan)
+        iy = np.rint((g["latitude"].to_numpy() - lat0) / dlat).astype(int)
+        ix = np.rint((g["longitude"].to_numpy() - lon0) / dlon).astype(int)
+        a[iy * nx + ix] = g[col].to_numpy()
+        return [None if np.isnan(x) else round(float(x), 2) for x in a]  # None = land or no data
+
+    return {"lat0": lat0, "lon0": lon0, "dlat": dlat, "dlon": dlon, "nx": nx, "ny": ny,
+            "steps": [{"label": label, "u": flat(g, "wave_u"), "v": flat(g, "wave_v")} for label, g in steps]}
 
 
 # Categories for the browser; infinite ends become large numbers for JSON
@@ -114,8 +147,27 @@ def box_feature(box):
         "type": "Polygon", "coordinates": [[[w, s], [e, s], [e, n], [w, n], [w, s]]]}}
 
 
+def wave_layer_payload(sb, key):
+    """Sidebar controls for the animated wave layer, and the field to send to the map (None when off)."""
+    waves = load_waves(WAVE_CSV)
+    show = sb.checkbox("Wave direction (animated)", value=waves is not None, disabled=waves is None, key=f"{key}_show",
+                       help="Copernicus Marine global wave model, 1/12° grid. The lines move the way the waves "
+                            "travel; faster lines are faster (deep-water group speed)."
+                       if waves else f"No wave data found at {WAVE_CSV}.")
+    if not (show and waves):
+        return None
+    i = 0
+    if len(waves["steps"]) > 1:
+        i = sb.select_slider("Wave time step", options=list(range(len(waves["steps"]))),
+                             format_func=lambda k: waves["steps"][k]["label"], key=f"{key}_step")
+    sel = waves["steps"][i]
+    label = f"{sel['label']} of {len(waves['steps'])}" if sel["label"].startswith("Step") else sel["label"]
+    return {k: waves[k] for k in ("lat0", "lon0", "dlat", "dlon", "nx", "ny")} | {
+        "u": sel["u"], "v": sel["v"], "label": label}
+
+
 def render_map(template_name, payload, height=900):
-    template = (HERE / template_name).read_text()
+    template = (HERE / template_name).read_text().replace("__WAVE_LAYER__", (HERE / "wave_layer.js").read_text())
     html = template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/"))
     components.html(html, height=height)
 

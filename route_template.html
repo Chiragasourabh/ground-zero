@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>__WAVE_LAYER__</script>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root { --ink:#0D2B45; --paper:#F3F7F9; --rule:#C9D6DF; --sea:#2E6F95; }
@@ -161,9 +162,15 @@ map.on("moveend", () => {
   try { window.name = JSON.stringify({ key: D.viewKey, center: map.getCenter(), zoom: map.getZoom() }); } catch (e) {}
 });
 
+// ---------- Waves: particles that drift the way the waves travel (wave_layer.js) ----------
+const waveAt = D.waves ? addWaveLayer(map, D.waves, { bottom: 60 }) : () => null;
+
 // ---------- Coordinates readout and click-to-read ----------
 const coordsEl = document.getElementById("coords");
-map.on("mousemove", e => { coordsEl.textContent = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`; });
+map.on("mousemove", e => {
+  const wv = waveAt(e.latlng.lat, e.latlng.lng);
+  coordsEl.textContent = `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}` + (wv ? ` · waves ${waveText(wv)}` : "");
+});
 // Streamlit can't read values back from this map, so a picked point goes into the page URL
 // (?start=lon,lat&dest=lon,lat&ship=id) and the app reloads with it. Both ends are written so the other stays put.
 function pickVoyage(which, lonlat) {
