@@ -1,4 +1,7 @@
+.DS_Store
 data/bathymetry.csv
 data/bathy_grid.*
 __pycache__/
 MNT_FACADE_ATLANTIQUE_HOMONIM_NM/
+OCEAN.code-workspace
+data/mfwamglocep_2026020100_R20260202_00H.nc
